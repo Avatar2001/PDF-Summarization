@@ -1,44 +1,44 @@
-from dotenv import load_dotenv
+from langchain.chains.summarize import load_summarize_chain
+from langchain.document_loaders import PyPDFLoader
+from langchain import OpenAI
 import streamlit as st
-from PyPDF2 import PdfReader
-from transformers import pipeline  # Hugging Face's Transformers library for summarization
+from apikey import apikey
+import os
+import tempfile
 
-def main():
-    load_dotenv()
-    st.set_page_config(page_title="Summarize your PDF")
-    st.header("Summarize your PDF 💬")
-    
-    # Load summarization model
-    summarizer = pipeline("summarization")
+# Set up OpenAI API
+os.environ["OPENAI_API_KEY"] = apikey
+llm = OpenAI(temperature=0)
 
-    # Upload file
-    pdf = st.file_uploader("Upload your PDF", type="pdf")
+def summarize_pdfs_from_folder(pdfs_folder):
+    summaries = []
+    for pdf_file in pdfs_folder:
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            temp_path = temp_file.name
+            temp_file.write(pdf_file.read())
+        
+        loader = PyPDFLoader(temp_path)
+        docs = loader.load_and_split()
+        chain = load_summarize_chain(llm, chain_type="map_reduce")
+        summary = chain.run(docs)
+        summaries.append(summary)
+
+        # Delete the temporary file
+        os.remove(temp_path)
     
-    # Extract the text
-    if pdf is not None:
-        pdf_reader = PdfReader(pdf)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
-        
-       # st.write("Full Text Extracted:")
-       # st.write(text)
-        
-        # Summarize the text
-        if text.strip():
-            st.subheader("Summary:")
-            # Split text into chunks if it's too long
-            max_chunk_size = 1000  # Adjust based on model limits
-            chunks = [text[i:i + max_chunk_size] for i in range(0, len(text), max_chunk_size)]
-            
-            summary = ""
-            for chunk in chunks:
-                summarized_chunk = summarizer(chunk, max_length=130, min_length=30, do_sample=False)
-                summary += summarized_chunk[0]['summary_text'] + " "
-            
+    return summaries
+
+# Streamlit App
+st.title("Multiple PDF Summarizer")
+
+# Allow user to upload PDF files
+pdf_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
+
+if pdf_files:
+    # Generate summaries when the "Generate Summary" button is clicked
+    if st.button("Generate Summary"):
+        st.write("Summaries:")
+        summaries = summarize_pdfs_from_folder(pdf_files)
+        for i, summary in enumerate(summaries):
+            st.write(f"Summary for PDF {i+1}:")
             st.write(summary)
-        else:
-            st.warning("No text could be extracted from the PDF. Please check the file.")
-
-if __name__ == '__main__':
-    main()
